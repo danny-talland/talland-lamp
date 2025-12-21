@@ -1,2 +1,8 @@
-/data
-/logs
+# Data: keep the folder via .gitkeep, ignore everything else
+/data/**
+!/data/.gitkeep
+
+# Logs: keep the folder structure (.gitkeep files), ignore all log content
+/logs/**
+!/logs/**/
+!/logs/**/.gitkeep
