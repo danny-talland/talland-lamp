@@ -18,6 +18,8 @@ services:
       - ./config/vhosts:/etc/apache2/sites-enabled
       - ./logs/apache2:/var/log/apache2
       - ./logs/xdebug:/var/log/xdebug
+      - ./ssh/id_ed25519:/root/.ssh/id_ed25519:ro
+      - ./ssh/id_ed25519:/var/www/.ssh/id_ed25519:ro
     environment:
       APACHE_DOCUMENT_ROOT: /var/www/html
       PMA_PORT: 8080
@@ -57,4 +59,3 @@ services:
     volumes:
       - /sessions
       - ./config/php/php.ini:/usr/local/etc/php/conf.d/php-phpmyadmin.ini
-
