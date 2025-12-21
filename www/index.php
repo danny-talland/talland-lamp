@@ -76,7 +76,7 @@ if (isset($_GET['d'])) {
 <body>
     <header>
         <div id="logo">
-            <img src="assets/logo_talland.png">
+            <img src="logo_talland.png">
         </div>
         <div id="status">
             <ul>

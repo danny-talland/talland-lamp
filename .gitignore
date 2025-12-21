@@ -6,8 +6,3 @@
 /logs/**
 !/logs/**/
 !/logs/**/.gitkeep
-
-# Config: keep folder structure (.gitkeep files), ignore all config content
-/config/**
-!/config/**/
-!/config/**/.gitkeep
