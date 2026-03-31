@@ -13,3 +13,11 @@
 # SSL certs/keys must never be committed
 /config/ssl/**
 !/config/ssl/.gitkeep
+
+# Generated vhost configs must never be committed
+/config/vhosts/**
+!/config/vhosts/.gitkeep
+
+# Local projects must never be committed
+/projects/**
+!/projects/.gitkeep
