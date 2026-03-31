@@ -12,6 +12,9 @@ const GIT_CLONE = TRUE;
 // Folders deleten aan/uit
 const ALLOW_DELETE = TRUE;
 
+// SSL certificaten uploaden aan/uit
+const CERT_UPLOAD = TRUE;
+
 
 // Hieronder niets aan te passen...
 
@@ -39,10 +42,27 @@ if (isset($_POST['repo']) && !empty($_POST['repo'])) {
     $repo = escapeshellarg($repo);
     $target = escapeshellarg($target);
 
-    $result = shell_exec("git clone $repo $target 2>&1") . " ";
+    $ssh_key = '/var/www/.ssh/id_ed25519';
+    $ssh_key_content = @file_get_contents($ssh_key);
 
-    if (stripos($result, "fatal") === true) {
-        $_SESSION['shellmsg'] = "<div class='error'>$result</div>";
+    // Placeholder or missing private key is a common local setup issue in this stack.
+    if (!is_string($ssh_key_content) || stripos($ssh_key_content, 'BEGIN OPENSSH PRIVATE KEY') === false) {
+        $_SESSION['shellmsg'] = "<div class='error'>Git clone geblokkeerd: geen geldige private key gevonden op /var/www/.ssh/id_ed25519.<br>Zet je echte key in ssh/id_ed25519 (niet de placeholder tekst) en herstart de webserver container.</div>";
+        header("Location:index.php");
+        die();
+    }
+
+    $runtime_key = '/tmp/git_id_ed25519';
+    @copy($ssh_key, $runtime_key);
+    @chmod($runtime_key, 0600);
+
+    $ssh_cmd = "ssh -o IdentitiesOnly=yes -o IdentityFile=/tmp/git_id_ed25519 -o StrictHostKeyChecking=accept-new";
+    $result = shell_exec("GIT_SSH_COMMAND='" . $ssh_cmd . "' git clone $repo $target 2>&1") . " ";
+
+    @unlink($runtime_key);
+
+    if (stripos($result, "fatal") !== false || stripos($result, "error:") !== false) {
+        $_SESSION['shellmsg'] = "<div class='error'>" . nl2br(htmlspecialchars($result)) . "</div>";
     } else {
         $_SESSION['shellmsg'] = "<div class='succes'>Cloned $repo in $target...</div>";
     }
@@ -57,6 +77,74 @@ if (isset($_GET['d'])) {
     $shell = "rm -rf $target";
     $result = shell_exec($shell);
 
+    header("Location:index.php");
+    die();
+}
+
+if (isset($_POST['action']) && $_POST['action'] === 'cert_upload') {
+    $ssl_dir = '/etc/apache2/ssl/';
+    $errors  = [];
+    $saved   = [];
+
+    if (empty($_FILES['ssl_files']['name'][0])) {
+        $_SESSION['shellmsg'] = "<div class='error'>Geen bestanden geselecteerd.</div>";
+        header("Location:index.php");
+        die();
+    }
+
+    // Process multiple files from single input[type=file multiple]
+    for ($i = 0; $i < count($_FILES['ssl_files']['name']); $i++) {
+        $name = $_FILES['ssl_files']['name'][$i];
+        $tmp  = $_FILES['ssl_files']['tmp_name'][$i];
+        $err  = $_FILES['ssl_files']['error'][$i];
+
+        if ($err !== UPLOAD_ERR_OK) {
+            $errors[] = "Upload fout voor " . htmlspecialchars($name);
+            continue;
+        }
+
+        // Read file content for type detection (no extension required)
+        $content = @file_get_contents($tmp);
+        if ($content === false) {
+            $errors[] = "Kon niet lezen: " . htmlspecialchars($name);
+            continue;
+        }
+
+        // Detect type by content
+        $is_cert = strpos($content, 'BEGIN CERTIFICATE') !== false || 
+                   strpos($content, 'BEGIN TRUSTED CERTIFICATE') !== false;
+        $is_key  = strpos($content, 'BEGIN OPENSSH PRIVATE KEY') !== false ||
+                   strpos($content, 'BEGIN RSA PRIVATE KEY') !== false ||
+                   strpos($content, 'BEGIN EC PRIVATE KEY') !== false ||
+                   strpos($content, 'BEGIN PRIVATE KEY') !== false;
+
+        if (!$is_cert && !$is_key) {
+            $errors[] = htmlspecialchars($name) . " – ongeldig: geen certificate of private key gevonden.";
+            continue;
+        }
+
+        // Clean filename (no extension required)
+        $filename = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($name));
+        $dest = $ssl_dir . $filename;
+
+        if (move_uploaded_file($tmp, $dest)) {
+            chmod($dest, 0640);
+            $type = $is_key ? 'key' : 'cert';
+            $saved[] = htmlspecialchars($filename) . " (" . $type . ")";
+        } else {
+            $errors[] = "Kon niet opslaan: " . htmlspecialchars($filename) . " (controleer map-rechten)";
+        }
+    }
+
+    $msg = '';
+    if (!empty($saved)) {
+        $msg .= "<div class='succes'>✓ Opgeslagen: " . implode(', ', $saved) . ". Apache wordt automatisch herladen zodra de SSL-map wijzigt.</div>";
+    }
+    if (!empty($errors)) {
+        $msg .= "<div class='error'>✗ " . implode('<br>', $errors) . "</div>";
+    }
+
+    $_SESSION['shellmsg'] = $msg;
     header("Location:index.php");
     die();
 }
@@ -122,6 +210,41 @@ if (GIT_CLONE) {
                 <input id="repo" name="repo" placeholder="https://github.com/user/repo.git" />
                 <button type="submit">CLONE</button>
             </form>
+
+<?php
+}
+
+if (CERT_UPLOAD) {
+    // Toon huidige certificaten in de SSL map
+    $ssl_dir = '/etc/apache2/ssl/';
+    $cert_files = [];
+    if (is_dir($ssl_dir)) {
+        foreach (new DirectoryIterator($ssl_dir) as $f) {
+            if (!$f->isDot() && $f->isFile()) $cert_files[] = $f->getFilename();
+        }
+        natcasesort($cert_files);
+    }
+?>
+
+            <h2>SSL Certificaten</h2>
+
+            <form id="cert-upload" action="" method="post" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="cert_upload">
+                <p>
+                    <label for="ssl_files"><strong>Upload certificaten en keys:</strong></label><br>
+                    <small>Accepteert alle bestanden. Detectie gebeurt server-side op inhoud (geen extensie vereist).</small>
+                </p>
+                <input type="file" id="ssl_files" name="ssl_files[]" multiple required>
+                <button type="submit">UPLOADEN &amp; APACHE HERLADEN</button>
+            </form>
+
+<?php if (!empty($cert_files)) { ?>
+            <p><strong>Huidige bestanden in /etc/apache2/ssl/:</strong><br>
+                <code><?= implode('<br>', array_map('htmlspecialchars', $cert_files)) ?></code>
+            </p>
+<?php } else { ?>
+            <p><em>Nog geen certificaten in /etc/apache2/ssl/.</em></p>
+<?php } ?>
 
 <?php
 }

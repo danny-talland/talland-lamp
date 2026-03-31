@@ -6,3 +6,6 @@
 /logs/**
 !/logs/**/
 !/logs/**/.gitkeep
+
+# Frontend root in /www stays tracked, but nested project folders do not
+/www/*/

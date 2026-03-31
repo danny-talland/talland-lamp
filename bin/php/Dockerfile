@@ -117,8 +117,17 @@ RUN mkdir -p /var/www/.ssh \
  && chmod 600 /var/www/.ssh/id_ed25519 \
  && chmod 600 /var/www/.ssh/config
 
-# Insure an SSL directory exists
-RUN mkdir -p /etc/apache2/ssl
+# Insure an SSL directory exists and allow www-data (PHP/Apache worker) to write certs
+RUN mkdir -p /etc/apache2/ssl \
+ && chown root:www-data /etc/apache2/ssl \
+ && chmod 775 /etc/apache2/ssl
+
+# Suppress Apache FQDN warning inside the container.
+RUN echo "ServerName localhost" > /etc/apache2/conf-available/servername.conf \
+ && a2enconf servername
+
+COPY bin/php/start-with-ssl-watch.sh /usr/local/bin/start-with-ssl-watch.sh
+RUN chmod 755 /usr/local/bin/start-with-ssl-watch.sh
 
 # Enable SSL support
 RUN a2enmod ssl && a2enmod rewrite
@@ -128,3 +137,6 @@ RUN a2enmod rewrite headers
 
 # Cleanup
 RUN rm -rf /usr/src/*
+
+CMD ["/usr/local/bin/start-with-ssl-watch.sh"]
+
