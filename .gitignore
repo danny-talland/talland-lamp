@@ -9,3 +9,7 @@
 
 # Frontend root in /www stays tracked, but nested project folders do not
 /www/*/
+
+# SSL certs/keys must never be committed
+/config/ssl/**
+!/config/ssl/.gitkeep
