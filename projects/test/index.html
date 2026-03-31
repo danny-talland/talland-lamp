@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eenvoudige Quiz</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="quiz-card">
+      <p class="eyebrow">Snelle Kennistest</p>
+      <h1>Eenvoudige Quiz</h1>
+      <p class="intro">Beantwoord 5 korte meerkeuzevragen en bekijk direct je score.</p>
+
+      <div id="quiz">
+        <div id="status" class="status">Vraag 1 van 5</div>
+        <h2 id="question" class="question"></h2>
+        <div id="answers" class="answers"></div>
+        <button id="next-button" class="button secondary" type="button" disabled>Volgende vraag</button>
+      </div>
+
+      <div id="result" class="result hidden">
+        <h2>Quiz afgerond</h2>
+        <p id="score-text" class="score-text"></p>
+        <button id="restart-button" class="button" type="button">Opnieuw spelen</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

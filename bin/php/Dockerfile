@@ -93,29 +93,13 @@ RUN apt-get update \
  && apt-get install -y git openssh-client \
  && rm -rf /var/lib/apt/lists/*
 
-# Create .ssh directory
-RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 
-# Copy private key from project root -> /root/.ssh/
-COPY ssh/id_ed25519 /root/.ssh/id_ed25519
 
-# Linux line ends (LF)
-RUN sed -i 's/\r$//' /root/.ssh/id_ed25519
 
 # Fix permissions so SSH doesn’t reject it
-RUN chmod 600 /root/.ssh/id_ed25519
 
 # Avoid fingerprint prompt:
-RUN echo "StrictHostKeyChecking no" > /root/.ssh/config
-
-RUN mkdir -p /var/www/.ssh \
- && cp /root/.ssh/id_ed25519 /var/www/.ssh/id_ed25519 \
- && cp /root/.ssh/config /var/www/.ssh/config \
- && chown -R www-data:www-data /var/www/.ssh \
- && chmod 700 /var/www/.ssh \
- && chmod 600 /var/www/.ssh/id_ed25519 \
- && chmod 600 /var/www/.ssh/config
 
 # Insure an SSL directory exists and allow www-data (PHP/Apache worker) to write certs
 RUN mkdir -p /etc/apache2/ssl \

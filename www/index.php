@@ -1,10 +1,137 @@
 <?php 
 
+const PROJECTS_DIR = '/var/www/html/projects/';
+const VHOSTS_DIR = '/etc/apache2/sites-enabled/';
+const VHOST_FILE_PREFIX = 'tlamp-project-';
+
+function decode_mount_path(string $path): string
+{
+    return strtr($path, [
+        '\\040' => ' ',
+        '\\011' => "\t",
+        '\\012' => "\n",
+        '\\134' => '\\',
+    ]);
+}
+
+function convert_mount_source_to_local_path(string $source): string
+{
+    $source = decode_mount_path($source);
+
+    if (preg_match('#^/(?:host_mnt|run/desktop/mnt/host)/([a-zA-Z])/(.+)$#', $source, $matches)) {
+        return strtoupper($matches[1]) . ':\\' . str_replace('/', '\\', $matches[2]);
+    }
+
+    return $source;
+}
+
+function get_projects_local_path(): string
+{
+    $mountinfo = @file('/proc/self/mountinfo', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    if (!is_array($mountinfo)) {
+        return '';
+    }
+
+    foreach ($mountinfo as $line) {
+        $segments = explode(' - ', $line, 2);
+        if (count($segments) !== 2) {
+            continue;
+        }
+
+        $left = preg_split('/\s+/', $segments[0]);
+        $right = preg_split('/\s+/', $segments[1]);
+
+        if (!isset($left[4], $right[1])) {
+            continue;
+        }
+
+        if ($left[4] === rtrim(PROJECTS_DIR, '/')) {
+            return rtrim(convert_mount_source_to_local_path($right[1]), "\\/") . DIRECTORY_SEPARATOR;
+        }
+    }
+
+    return '';
+}
+
+function get_vhost_file_path(string $folder): string
+{
+    $slug = preg_replace('/[^a-z0-9._-]+/i', '-', strtolower($folder));
+    $slug = trim((string) $slug, '-');
+
+    if ($slug === '') {
+        $slug = 'project';
+    }
+
+    return VHOSTS_DIR . VHOST_FILE_PREFIX . $slug . '-' . substr(md5($folder), 0, 8) . '.conf';
+}
+
+function build_vhost_config(string $folder, string $hostname): string
+{
+    $documentRoot = PROJECTS_DIR . $folder;
+    $logName = preg_replace('/[^a-z0-9._-]+/i', '-', strtolower($folder));
+
+    return <<<CONF
+# TLAMP_PROJECT={$folder}
+<VirtualHost *:80>
+    ServerName {$hostname}
+    DocumentRoot {$documentRoot}
+
+    <Directory {$documentRoot}>
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/{$logName}-error.log
+    CustomLog \${APACHE_LOG_DIR}/{$logName}-access.log combined
+</VirtualHost>
+
+CONF;
+}
+
+function load_project_vhosts(): array
+{
+    $vhosts = [];
+
+    if (!is_dir(VHOSTS_DIR)) {
+        return $vhosts;
+    }
+
+    foreach (new DirectoryIterator(VHOSTS_DIR) as $file) {
+        if ($file->isDot() || !$file->isFile() || $file->getFilename() === '.gitkeep') {
+            continue;
+        }
+
+        $content = @file_get_contents($file->getPathname());
+        if (!is_string($content)) {
+            continue;
+        }
+
+        if (!preg_match('/^# TLAMP_PROJECT=(.+)$/m', $content, $projectMatch)) {
+            continue;
+        }
+
+        if (!preg_match('/^\s*ServerName\s+([^\s#]+)\s*$/mi', $content, $hostMatch)) {
+            continue;
+        }
+
+        $project = trim($projectMatch[1]);
+        $vhosts[$project] = [
+            'hostname' => trim($hostMatch[1]),
+            'file' => $file->getPathname(),
+        ];
+    }
+
+    return $vhosts;
+}
+
+function is_valid_hostname(string $hostname): bool
+{
+    return (bool) preg_match('/^(?=.{1,253}$)(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i', $hostname);
+}
 
 // Openen in Visual Studio Code aan/uit
 const OPEN_VSC = TRUE;
-// Om directe link naar VSCode te maken volgende lokale pad instellen:
-const WWW_MAP_LOKAAL_PAD = 'c:\\dockernexed\\docker-compose-lamp\\www\\';
 
 // GIT Clone functie aan/uit
 const GIT_CLONE = TRUE;
@@ -18,13 +145,15 @@ const CERT_UPLOAD = TRUE;
 
 // Hieronder niets aan te passen...
 
+$projects_local_path = get_projects_local_path();
+
 session_start();
 
 if (isset($_GET['warp'])) {
     $_POST['repo'] = 'https://github.com/danny-talland/js_warpspeed.git';
 }
 
-if (isset($_POST['repo']) && !empty($_POST['repo'])) {
+if (isset($_POST['action']) && $_POST['action'] === 'clone' && isset($_POST['repo']) && !empty($_POST['repo'])) {
     $repo = trim($_POST['repo']);
     
     if (stripos($repo, "git clone ") === 0) {
@@ -37,17 +166,18 @@ if (isset($_POST['repo']) && !empty($_POST['repo'])) {
         $target = str_ireplace(".git", "", basename($_POST['repo']));
     }
 
-    $target = '/var/www/html/' . $target;
+    $targetName = basename($target);
+    $target = PROJECTS_DIR . $targetName;
 
     $repo = escapeshellarg($repo);
     $target = escapeshellarg($target);
 
-    $ssh_key = '/var/www/.ssh/id_ed25519';
+    $ssh_key = '/etc/apache2/ssl/id_ed25519';
     $ssh_key_content = @file_get_contents($ssh_key);
 
     // Placeholder or missing private key is a common local setup issue in this stack.
     if (!is_string($ssh_key_content) || stripos($ssh_key_content, 'BEGIN OPENSSH PRIVATE KEY') === false) {
-        $_SESSION['shellmsg'] = "<div class='error'>Git clone geblokkeerd: geen geldige private key gevonden op /var/www/.ssh/id_ed25519.<br>Zet je echte key in ssh/id_ed25519 (niet de placeholder tekst) en herstart de webserver container.</div>";
+        $_SESSION['shellmsg'] = "<div class='error'>Git clone geblokkeerd: geen geldige private key gevonden op /etc/apache2/ssl/id_ed25519.<br>Upload je SSH private key via het SSL Certificaten formulier.</div>";
         header("Location:index.php");
         die();
     }
@@ -64,7 +194,65 @@ if (isset($_POST['repo']) && !empty($_POST['repo'])) {
     if (stripos($result, "fatal") !== false || stripos($result, "error:") !== false) {
         $_SESSION['shellmsg'] = "<div class='error'>" . nl2br(htmlspecialchars($result)) . "</div>";
     } else {
-        $_SESSION['shellmsg'] = "<div class='succes'>Cloned $repo in $target...</div>";
+        $_SESSION['shellmsg'] = "<div class='succes'>Repository gecloned naar /projects/" . htmlspecialchars($targetName, ENT_QUOTES, 'UTF-8') . "</div>";
+    }
+
+    header("Location:index.php");
+    die();
+}
+
+if (isset($_POST['action']) && $_POST['action'] === 'save_vhost') {
+    $folder = basename((string) ($_POST['project_folder'] ?? ''));
+    $hostname = strtolower(trim((string) ($_POST['hostname'] ?? '')));
+
+    if ($folder === '' || !is_dir(PROJECTS_DIR . $folder)) {
+        $_SESSION['shellmsg'] = "<div class='error'>Ongeldige projectmap voor vhost.</div>";
+        header("Location:index.php");
+        die();
+    }
+
+    if (!is_valid_hostname($hostname)) {
+        $_SESSION['shellmsg'] = "<div class='error'>Ongeldige hostname. Gebruik bijvoorbeeld project.local.</div>";
+        header("Location:index.php");
+        die();
+    }
+
+    $existingVhosts = load_project_vhosts();
+    foreach ($existingVhosts as $project => $vhost) {
+        if ($project !== $folder && strcasecmp($vhost['hostname'], $hostname) === 0) {
+            $_SESSION['shellmsg'] = "<div class='error'>Hostname " . htmlspecialchars($hostname, ENT_QUOTES, 'UTF-8') . " is al in gebruik.</div>";
+            header("Location:index.php");
+            die();
+        }
+    }
+
+    $filePath = $existingVhosts[$folder]['file'] ?? get_vhost_file_path($folder);
+    $written = @file_put_contents($filePath, build_vhost_config($folder, $hostname));
+
+    if ($written === false) {
+        $_SESSION['shellmsg'] = "<div class='error'>Kon vhost-config niet opslaan.</div>";
+    } else {
+        $_SESSION['shellmsg'] = "<div class='succes'>Vhost opgeslagen voor " . htmlspecialchars($hostname, ENT_QUOTES, 'UTF-8') . ".</div>";
+    }
+
+    header("Location:index.php");
+    die();
+}
+
+if (isset($_POST['action']) && $_POST['action'] === 'delete_vhost') {
+    $folder = basename((string) ($_POST['project_folder'] ?? ''));
+    $existingVhosts = load_project_vhosts();
+
+    if ($folder === '' || !isset($existingVhosts[$folder])) {
+        $_SESSION['shellmsg'] = "<div class='error'>Geen vhost gevonden om te verwijderen.</div>";
+        header("Location:index.php");
+        die();
+    }
+
+    if (@unlink($existingVhosts[$folder]['file'])) {
+        $_SESSION['shellmsg'] = "<div class='succes'>Vhost verwijderd voor " . htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') . ".</div>";
+    } else {
+        $_SESSION['shellmsg'] = "<div class='error'>Kon vhost-config niet verwijderen.</div>";
     }
 
     header("Location:index.php");
@@ -72,10 +260,32 @@ if (isset($_POST['repo']) && !empty($_POST['repo'])) {
 }
 
 if (isset($_GET['d'])) {
-    $target = escapeshellarg($_GET['d']); 
+    $folder = basename($_GET['d']);
+    $target = escapeshellarg(PROJECTS_DIR . $folder);
 
     $shell = "rm -rf $target";
     $result = shell_exec($shell);
+
+    header("Location:index.php");
+    die();
+}
+
+if (isset($_GET['dssl'])) {
+    $ssl_dir = '/etc/apache2/ssl/';
+    $filename = preg_replace('/[^a-zA-Z0-9._-]/', '', basename($_GET['dssl']));
+    $target   = $ssl_dir . $filename;
+    $real_ssl = realpath($ssl_dir);
+    $real_tgt = realpath($target);
+
+    if ($filename && $real_tgt && $real_ssl && strpos($real_tgt, $real_ssl . '/') === 0 && is_file($real_tgt)) {
+        if (unlink($real_tgt)) {
+            $_SESSION['shellmsg'] = "<div class='succes'>✓ " . htmlspecialchars($filename) . " verwijderd.</div>";
+        } else {
+            $_SESSION['shellmsg'] = "<div class='error'>✗ Kon " . htmlspecialchars($filename) . " niet verwijderen.</div>";
+        }
+    } else {
+        $_SESSION['shellmsg'] = "<div class='error'>✗ Bestand niet gevonden: " . htmlspecialchars($filename) . "</div>";
+    }
 
     header("Location:index.php");
     die();
@@ -138,7 +348,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'cert_upload') {
 
     $msg = '';
     if (!empty($saved)) {
-        $msg .= "<div class='succes'>✓ Opgeslagen: " . implode(', ', $saved) . ". Apache wordt automatisch herladen zodra de SSL-map wijzigt.</div>";
+        $msg .= "<div class='succes'>✓ Opgeslagen: " . implode(', ', $saved) . "</div>";
     }
     if (!empty($errors)) {
         $msg .= "<div class='error'>✗ " . implode('<br>', $errors) . "</div>";
@@ -204,11 +414,12 @@ if (isset($_SESSION['shellmsg'])) {
 if (GIT_CLONE) {
 ?>
 
-            <h2>Clone repository</h2>
+            <h2>Clone repository <a href="#" onclick="openSSLModal(); return false;" style="font-size: 0.8em; color: #0066cc;">(SSL)</a></h2>
 
-            <form id="clone" action="" method="post">
+            <form id="clone" action="" method="post" onsubmit="cloneStart(this)">
+                <input type="hidden" name="action" value="clone">
                 <input id="repo" name="repo" placeholder="https://github.com/user/repo.git" />
-                <button type="submit">CLONE</button>
+                <button id="clone-btn" type="submit">CLONE</button>
             </form>
 
 <?php
@@ -220,31 +431,41 @@ if (CERT_UPLOAD) {
     $cert_files = [];
     if (is_dir($ssl_dir)) {
         foreach (new DirectoryIterator($ssl_dir) as $f) {
-            if (!$f->isDot() && $f->isFile()) $cert_files[] = $f->getFilename();
+            if ($f->isDot() || !$f->isFile() || $f->getFilename() === '.gitkeep') {
+                continue;
+            }
+            $cert_files[] = $f->getFilename();
         }
         natcasesort($cert_files);
     }
 ?>
 
-            <h2>SSL Certificaten</h2>
+            <div id="ssl-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <span class="modal-close" onclick="closeSSLModal()">&times;</span>
+                    <h2>Upload je private certificaten en keys</h2>
+                    
+                    <form id="cert-upload" action="" method="post" enctype="multipart/form-data">
+                        <input type="hidden" name="action" value="cert_upload">
+                        <input type="file" id="ssl_files" name="ssl_files[]" multiple required>
+                        <button type="submit">UPLOADEN</button>
+                    </form>
 
-            <form id="cert-upload" action="" method="post" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="cert_upload">
-                <p>
-                    <label for="ssl_files"><strong>Upload certificaten en keys:</strong></label><br>
-                    <small>Accepteert alle bestanden. Detectie gebeurt server-side op inhoud (geen extensie vereist).</small>
-                </p>
-                <input type="file" id="ssl_files" name="ssl_files[]" multiple required>
-                <button type="submit">UPLOADEN &amp; APACHE HERLADEN</button>
-            </form>
-
+                    <h3>Certificaten en keys:</h3>
 <?php if (!empty($cert_files)) { ?>
-            <p><strong>Huidige bestanden in /etc/apache2/ssl/:</strong><br>
-                <code><?= implode('<br>', array_map('htmlspecialchars', $cert_files)) ?></code>
-            </p>
-<?php } else { ?>
-            <p><em>Nog geen certificaten in /etc/apache2/ssl/.</em></p>
+                    <ul class="ssl-files">
+<?php foreach ($cert_files as $cf) { ?>
+                        <li>
+                            <code><?= htmlspecialchars($cf) ?></code>
+                            <a href="#" onclick="dssl('<?= rawurlencode($cf) ?>'); return false;" title="Verwijderen"><img class="icon" src="icon_delete.png" alt="Verwijderen"></a>
+                        </li>
 <?php } ?>
+                    </ul>
+<?php } else { ?>
+                    <p><em>Nog geen certificaten.</em></p>
+<?php } ?>
+                </div>
+            </div>
 
 <?php
 }
@@ -253,12 +474,19 @@ if (CERT_UPLOAD) {
              <h2>Projecten</h2>
 <?php 
 
-$it = new DirectoryIterator(".");
+$items = [];
+$projects_dir = PROJECTS_DIR;
+$projectVhosts = load_project_vhosts();
 
-foreach ($it as $f) {
-    if ($f->isDot()) continue;
-    if ($f->isDir()) 
-        $items[] = $f->getFilename();
+if (is_dir($projects_dir)) {
+    $it = new DirectoryIterator($projects_dir);
+
+    foreach ($it as $f) {
+        if ($f->isDot()) continue;
+        if ($f->isDir()) {
+            $items[] = $f->getFilename();
+        }
+    }
 }
     
 if (empty($items)) { ?>
@@ -271,14 +499,14 @@ if (empty($items)) { ?>
 <?php
     natcasesort($items); 
     foreach ($items as $folder) {
+        $projectVhost = $projectVhosts[$folder]['hostname'] ?? '';
         $vsc = "";
+        $vhostAction = "<td class='action'><a href='#' class='vhost-link' data-folder='" . htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') . "' data-hostname='" . htmlspecialchars($projectVhost, ENT_QUOTES, 'UTF-8') . "' onclick='openVhostModal(this); return false;' title='Vhost beheren'><img class='icon' src='icon_vhost.svg' alt='Vhost icon'></a></td>";
 
-        if (OPEN_VSC) {
-            $local = str_replace('\\', '/', WWW_MAP_LOKAAL_PAD . $folder);
-
+        if (OPEN_VSC && $projects_local_path !== '') {
+            $local = str_replace('\\', '/', $projects_local_path . $folder);
             $local = rawurlencode($local);
             $local = str_replace('%2F', '/', $local);
-
             $vsc = "<td class='action'><a href='vscode://file/" . $local . "' title='Open in VSC'><img class='icon' src='logo_vscode.png' alt='Visual Studio Code logo'></a></td>";
         }
 
@@ -290,14 +518,37 @@ if (empty($items)) { ?>
     ?>
         <?php
             echo $vsc;
+            echo $vhostAction;
             echo $delete;
                 ?>
 
-            <td><a target="_blank" href="http://localhost/<?= htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') ?></a></td>
+            <td><a target="_blank" href="http://localhost/projects/<?= htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') ?></a></td>
+            <td class="project-hostname">
+<?php if ($projectVhost !== '') { ?>
+                <a target="_blank" href="http://<?= htmlspecialchars($projectVhost, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($projectVhost, ENT_QUOTES, 'UTF-8') ?></a>
+<?php } ?>
+            </td>
         </tr>
     <?php } ?>
         </table>
 <?php } ?>
+
+        <div id="vhost-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="modal-close" onclick="closeVhostModal()">&times;</span>
+                <h2>Vhost beheren</h2>
+                <p id="vhost-project-name"></p>
+
+                <form id="vhost-form" action="" method="post" class="modal-form">
+                    <input type="hidden" name="action" id="vhost-action" value="save_vhost">
+                    <input type="hidden" name="project_folder" id="vhost-project-folder" value="">
+                    <label for="vhost-hostname">Hostname</label>
+                    <input type="text" name="hostname" id="vhost-hostname" placeholder="project.local" required>
+                    <button type="submit">OPSLAAN</button>
+                    <button type="submit" id="vhost-delete-btn" class="button-secondary" formnovalidate onclick="return submitDeleteVhost();">VERWIJDEREN</button>
+                </form>
+            </div>
+        </div>
 
         </main>
     </body>

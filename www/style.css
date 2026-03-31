@@ -93,3 +93,168 @@ td.action {
     width:30px;
     text-align: center;
 }
+
+/* SSL collapsible section */
+#ssl-section {
+    margin: 10px 0 20px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0 14px;
+}
+#ssl-section summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 8px 0;
+}
+#ssl-section summary::-webkit-details-marker { display: none; }
+#ssl-section summary h2 {
+    display: inline;
+    font-size: 1.1em;
+    margin: 0;
+}
+#ssl-section summary::before {
+    content: '▶ ';
+    font-size: 0.75em;
+    color: #555;
+}
+#ssl-section[open] summary::before {
+    content: '▼ ';
+}
+#ssl-section[open] summary {
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 10px;
+}
+
+/* SSL bestandenlijst */
+ul.ssl-files {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0;
+}
+ul.ssl-files li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+}
+ul.ssl-files li code {
+    flex: 1;
+}
+
+/* Modal dialog */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    border-radius: 6px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.modal-close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 20px;
+}
+
+.modal-close:hover,
+.modal-close:focus {
+    color: black;
+}
+
+.modal-content h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.3em;
+}
+
+.modal-content h3 {
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 0.95em;
+}
+
+#cert-upload {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+#cert-upload input[type="file"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+#cert-upload button {
+    padding: 8px 15px;
+    background-color: #4D6AFD;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+#cert-upload button:hover {
+    background-color: #3d5aed;
+}
+
+.modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.modal-form input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+.modal-form button {
+    padding: 8px 15px;
+    background-color: #4D6AFD;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.modal-form button:hover {
+    background-color: #3d5aed;
+}
+
+.modal-form .button-secondary {
+    background-color: #777;
+}
+
+.modal-form .button-secondary:hover {
+    background-color: #666;
+}
+
+.project-hostname {
+    white-space: nowrap;
+}

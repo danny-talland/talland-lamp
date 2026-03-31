@@ -2,24 +2,34 @@
 set -eu
 
 SSL_DIR="/etc/apache2/ssl"
-STATE_FILE="/tmp/ssl-watch.state"
+VHOSTS_DIR="/etc/apache2/sites-enabled"
+STATE_FILE="/tmp/apache-watch.state"
 
-snapshot_ssl_state() {
-    if [ ! -d "$SSL_DIR" ]; then
-        echo "missing"
+snapshot_dir_state() {
+    dir="$1"
+
+    if [ ! -d "$dir" ]; then
+        echo "missing:$dir"
         return
     fi
 
-    find "$SSL_DIR" -maxdepth 1 -type f -printf '%f|%T@|%s\n' 2>/dev/null | sort
+    find "$dir" -maxdepth 1 -type f -printf '%f|%T@|%s\n' 2>/dev/null | sort
 }
 
-watch_ssl_dir() {
-    last_state="$(snapshot_ssl_state)"
+snapshot_apache_state() {
+    {
+        snapshot_dir_state "$SSL_DIR"
+        snapshot_dir_state "$VHOSTS_DIR"
+    } | sort
+}
+
+watch_apache_dirs() {
+    last_state="$(snapshot_apache_state)"
     printf '%s' "$last_state" > "$STATE_FILE"
 
     while true; do
         sleep 2
-        current_state="$(snapshot_ssl_state)"
+        current_state="$(snapshot_apache_state)"
 
         if [ "$current_state" != "$last_state" ]; then
             printf '%s' "$current_state" > "$STATE_FILE"
@@ -29,5 +39,5 @@ watch_ssl_dir() {
     done
 }
 
-watch_ssl_dir &
+watch_apache_dirs &
 exec apache2-foreground
