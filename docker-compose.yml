@@ -1,28 +1,22 @@
 services:
   webserver:
     build:
-      context: .                
-      dockerfile: bin/php/Dockerfile   
-
+      context: .
+      dockerfile: bin/php/Dockerfile
     container_name: "tlamp-php"
     restart: "always"
     ports:
       - "80:80"
       - "443:443"
-    links:
-      - database
     volumes:
       - ./www:/var/www/html:rw
       - ./projects:/var/www/html/projects:rw
-      - ./config/php/php.ini:/usr/local/etc/php/php.ini
+      - ./config/php/php.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
       - ./config/ssl:/etc/apache2/ssl/
       - ./config/vhosts:/etc/apache2/sites-enabled
       - ./logs/apache2:/var/log/apache2
       - ./logs/xdebug:/var/log/xdebug
     environment:
-      APACHE_DOCUMENT_ROOT: /var/www/html
-      PMA_PORT: 8080
-      HOST_MACHINE_MYSQL_PORT: 3306
       XDEBUG_CONFIG: "client_host=host.docker.internal remote_port=9003"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -37,15 +31,13 @@ services:
       - ./config/initdb:/docker-entrypoint-initdb.d
       - ./data/mysql:/var/lib/mysql
       - ./logs/mysql:/var/log/mysql
-      - ./config/mysql/my.cnf:/etc/my.cnf
+      - ./config/mysql/my.cnf:/etc/mysql/conf.d/zz-custom.cnf:ro
     environment:
       MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
   phpmyadmin:
     image: phpmyadmin
     container_name: "tlamp-phpmyadmin"
     restart: "always"
-    links:
-      - database
     environment:
       PMA_HOST: database
       PMA_PORT: 3306
@@ -59,7 +51,6 @@ services:
       PMA_PMADB: phpmyadmin
     ports:
       - "8080:80"
-      - "8443:443"
     volumes:
       - /sessions
       - ./config/php/php.ini:/usr/local/etc/php/conf.d/php-phpmyadmin.ini

@@ -1,0 +1,10 @@
+.git
+.gitignore
+.vscode
+data
+logs
+projects
+config/ssl
+config/vhosts
+ssh
+temp_certs

@@ -1,57 +1,47 @@
 FROM php:8.4-apache-bookworm
 
-# Surpresses debconf complaints of trying to install apt packages interactively
-# https://github.com/moby/moby/issues/4032#issuecomment-192327844
- 
+# Suppresses debconf complaints of trying to install apt packages interactively
 ARG DEBIAN_FRONTEND=noninteractive
-
-# Update
-RUN apt-get -y update --fix-missing && \
-    apt-get upgrade -y && \
-    apt-get --no-install-recommends install -y apt-utils && \
-    rm -rf /var/lib/apt/lists/*
 
 RUN cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 
-# Install useful tools and install important libaries
-RUN apt-get -y update && \
-    apt-get -y --no-install-recommends install nano wget \
-dialog \
-libsqlite3-dev \
-libsqlite3-0 && \
-    apt-get -y --no-install-recommends install default-mysql-client \
-zlib1g-dev \
-libzip-dev \
-libicu-dev && \
-    apt-get -y --no-install-recommends install --fix-missing apt-utils \
-build-essential \
-git \
-curl \
-libonig-dev \
-fail2ban && \ 
-    apt-get install -y iputils-ping && \
-    apt-get -y --no-install-recommends install --fix-missing libcurl4 \
-libcurl4-openssl-dev \
-zip \
-unzip \
-openssl && \
+# Install system packages and build dependencies in one layer.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        apt-utils \
+        build-essential \
+        curl \
+        default-mysql-client \
+        dialog \
+        git \
+        iputils-ping \
+        libcurl4 \
+        libcurl4-openssl-dev \
+        libfreetype6-dev \
+        libicu-dev \
+        libjpeg62-turbo-dev \
+        libmagickwand-dev \
+        libonig-dev \
+        libpng-dev \
+        libsqlite3-0 \
+        libsqlite3-dev \
+        libzip-dev \
+        nano \
+        openssh-client \
+        openssl \
+        unzip \
+        wget \
+        zip \
+        zlib1g-dev && \
     rm -rf /var/lib/apt/lists/* && \
     curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
 # Install xdebug
 RUN pecl install xdebug-3.4.5 && \
     docker-php-ext-enable xdebug && \
-    mkdir /var/log/xdebug
-
-# Install redis
-# RUN pecl install redis-6.2.0 && \
-#    docker-php-ext-enable redis
+    mkdir -p /var/log/xdebug
 
 # Install imagick
-RUN apt-get update && \
-    apt-get -y --no-install-recommends install --fix-missing libmagickwand-dev && \
-    rm -rf /var/lib/apt/lists/*
-
 RUN cd /usr/local/src && \
     git clone https://github.com/Imagick/imagick && \
     cd imagick && \
@@ -64,63 +54,39 @@ RUN cd /usr/local/src && \
     rm -rf imagick && \
     docker-php-ext-enable imagick
 
-# Other PHP8 Extensions
+# Core PHP extensions
+RUN docker-php-ext-install \
+        bcmath \
+        calendar \
+        curl \
+        exif \
+        gettext \
+        mbstring \
+        mysqli \
+        pdo_mysql \
+        pdo_sqlite \
+        zip && \
+    docker-php-ext-install -j"$(nproc)" intl
 
-RUN docker-php-ext-install pdo_mysql && \
-    docker-php-ext-install pdo_sqlite && \
-    docker-php-ext-install bcmath && \
-    docker-php-ext-install mysqli && \
-    docker-php-ext-install curl && \
-    docker-php-ext-install zip && \
-    docker-php-ext-install -j$(nproc) intl && \
-    docker-php-ext-install mbstring && \
-    docker-php-ext-install gettext && \
-    docker-php-ext-install calendar && \
-    docker-php-ext-install exif
-
-
-# Install Freetype 
-RUN apt-get -y update && \
-    apt-get --no-install-recommends install -y libfreetype6-dev \
-libjpeg62-turbo-dev \
-libpng-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    docker-php-ext-configure gd --enable-gd --with-freetype --with-jpeg && \
+RUN docker-php-ext-configure gd --enable-gd --with-freetype --with-jpeg && \
     docker-php-ext-install gd
 
-# install ssh
-RUN apt-get update \
- && apt-get install -y git openssh-client \
- && rm -rf /var/lib/apt/lists/*
-
-
-
-
-
-# Fix permissions so SSH doesn’t reject it
-
-# Avoid fingerprint prompt:
-
-# Insure an SSL directory exists and allow www-data (PHP/Apache worker) to write certs
-RUN mkdir -p /etc/apache2/ssl \
- && chown root:www-data /etc/apache2/ssl \
- && chmod 775 /etc/apache2/ssl
+# Ensure Apache/PHP can manage SSL files created through the UI.
+RUN mkdir -p /etc/apache2/ssl && \
+    chown root:www-data /etc/apache2/ssl && \
+    chmod 775 /etc/apache2/ssl
 
 # Suppress Apache FQDN warning inside the container.
-RUN echo "ServerName localhost" > /etc/apache2/conf-available/servername.conf \
- && a2enconf servername
+RUN echo "ServerName localhost" > /etc/apache2/conf-available/servername.conf && \
+    a2enconf servername
 
 COPY bin/php/start-with-ssl-watch.sh /usr/local/bin/start-with-ssl-watch.sh
 RUN chmod 755 /usr/local/bin/start-with-ssl-watch.sh
 
-# Enable SSL support
-RUN a2enmod ssl && a2enmod rewrite
+# Enable Apache modules used by the stack.
+RUN a2enmod ssl rewrite headers
 
-# Enable apache modules
-RUN a2enmod rewrite headers
-
-# Cleanup
+# Cleanup build leftovers
 RUN rm -rf /usr/src/*
 
 CMD ["/usr/local/bin/start-with-ssl-watch.sh"]
-

@@ -22,6 +22,18 @@ function convert_mount_source_to_local_path(string $source): string
         return strtoupper($matches[1]) . ':\\' . str_replace('/', '\\', $matches[2]);
     }
 
+    if (preg_match('#^/(?:host_mnt|run/desktop/mnt/host)/(Users/.+)$#', $source, $matches)) {
+        return '/' . $matches[1];
+    }
+
+    if (preg_match('#^/(?:host_mnt|run/desktop/mnt/host)/(private/.+)$#', $source, $matches)) {
+        return '/' . $matches[1];
+    }
+
+    if (preg_match('#^/(?:host_mnt|run/desktop/mnt/host)/(Volumes/.+)$#', $source, $matches)) {
+        return '/' . $matches[1];
+    }
+
     return $source;
 }
 
@@ -153,6 +165,33 @@ if (isset($_GET['warp'])) {
     $_POST['repo'] = 'https://github.com/danny-talland/js_warpspeed.git';
 }
 
+if (isset($_POST['action']) && $_POST['action'] === 'create_folder') {
+    $folder = basename(trim((string) ($_POST['folder_name'] ?? '')));
+
+    if ($folder === '' || preg_match('/[\\\\\\/]/', $folder)) {
+        $_SESSION['shellmsg'] = "<div class='error'>Ongeldige mapnaam.</div>";
+        header("Location:index.php");
+        die();
+    }
+
+    $targetPath = PROJECTS_DIR . $folder;
+
+    if (is_dir($targetPath)) {
+        $_SESSION['shellmsg'] = "<div class='error'>Projectmap bestaat al.</div>";
+        header("Location:index.php");
+        die();
+    }
+
+    if (@mkdir($targetPath, 0775, true)) {
+        $_SESSION['shellmsg'] = "<div class='succes'>Projectmap " . htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') . " aangemaakt.</div>";
+    } else {
+        $_SESSION['shellmsg'] = "<div class='error'>Kon projectmap niet aanmaken.</div>";
+    }
+
+    header("Location:index.php");
+    die();
+}
+
 if (isset($_POST['action']) && $_POST['action'] === 'clone' && isset($_POST['repo']) && !empty($_POST['repo'])) {
     $repo = trim($_POST['repo']);
     
@@ -161,6 +200,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'clone' && isset($_POST['rep
     }
 
     list($repo, $target) = explode(" ", $repo . " ");
+    $requestedTarget = trim((string) ($_POST['target'] ?? ''));
+
+    if ($requestedTarget !== '') {
+        $target = $requestedTarget;
+    }
 
     if (empty($target)) {
         $target = str_ireplace(".git", "", basename($_POST['repo']));
@@ -411,20 +455,6 @@ if (isset($_SESSION['shellmsg'])) {
     unset($_SESSION['shellmsg']);
 }
 
-if (GIT_CLONE) {
-?>
-
-            <h2>Clone repository <a href="#" onclick="openSSLModal(); return false;" style="font-size: 0.8em; color: #0066cc;">(SSL)</a></h2>
-
-            <form id="clone" action="" method="post" onsubmit="cloneStart(this)">
-                <input type="hidden" name="action" value="clone">
-                <input id="repo" name="repo" placeholder="https://github.com/user/repo.git" />
-                <button id="clone-btn" type="submit">CLONE</button>
-            </form>
-
-<?php
-}
-
 if (CERT_UPLOAD) {
     // Toon huidige certificaten in de SSL map
     $ssl_dir = '/etc/apache2/ssl/';
@@ -442,7 +472,7 @@ if (CERT_UPLOAD) {
 
             <div id="ssl-modal" class="modal" style="display: none;">
                 <div class="modal-content">
-                    <span class="modal-close" onclick="closeSSLModal()">&times;</span>
+                    <span class="modal-close" onclick="closeModal('ssl-modal')">&times;</span>
                     <h2>Upload je private certificaten en keys</h2>
                     
                     <form id="cert-upload" action="" method="post" enctype="multipart/form-data">
@@ -470,6 +500,20 @@ if (CERT_UPLOAD) {
 <?php
 }
 ?>
+
+            <div class="project-actions">
+                <a href="#" class="action-tile" title="Nieuwe projectmap" onclick="openModal('new-project-modal'); return false;">
+                    <img src="icon_plus.svg" alt="Nieuw project">
+                </a>
+<?php if (GIT_CLONE) { ?>
+                <a href="#" class="action-tile" title="Repository clonen" onclick="openModal('clone-modal'); return false;">
+                    <img src="icon_git_plus.svg" alt="Clone repository">
+                </a>
+<?php } ?>
+                <a href="#" class="action-tile" title="Vhosts beheren" onclick="openVhostModal(); return false;">
+                    <img src="icon_vhost.svg" alt="Vhost toevoegen">
+                </a>
+            </div>
 
              <h2>Projecten</h2>
 <?php 
@@ -501,7 +545,6 @@ if (empty($items)) { ?>
     foreach ($items as $folder) {
         $projectVhost = $projectVhosts[$folder]['hostname'] ?? '';
         $vsc = "";
-        $vhostAction = "<td class='action'><a href='#' class='vhost-link' data-folder='" . htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') . "' data-hostname='" . htmlspecialchars($projectVhost, ENT_QUOTES, 'UTF-8') . "' onclick='openVhostModal(this); return false;' title='Vhost beheren'><img class='icon' src='icon_vhost.svg' alt='Vhost icon'></a></td>";
 
         if (OPEN_VSC && $projects_local_path !== '') {
             $local = str_replace('\\', '/', $projects_local_path . $folder);
@@ -518,7 +561,6 @@ if (empty($items)) { ?>
     ?>
         <?php
             echo $vsc;
-            echo $vhostAction;
             echo $delete;
                 ?>
 
@@ -533,20 +575,80 @@ if (empty($items)) { ?>
         </table>
 <?php } ?>
 
+        <div id="new-project-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="modal-close" onclick="closeModal('new-project-modal')">&times;</span>
+                <h2>Nieuwe projectmap</h2>
+
+                <form action="" method="post" class="modal-form">
+                    <input type="hidden" name="action" value="create_folder">
+                    <label for="folder_name">Mapnaam</label>
+                    <input type="text" name="folder_name" id="folder_name" placeholder="mijn-project" required>
+                    <button type="submit">AANMAKEN</button>
+                </form>
+            </div>
+        </div>
+
+<?php if (GIT_CLONE) { ?>
+        <div id="clone-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="modal-close" onclick="closeModal('clone-modal')">&times;</span>
+                <h2>Clone repository</h2>
+
+                <form id="clone" action="" method="post" onsubmit="cloneStart(this)" class="modal-form">
+                    <input type="hidden" name="action" value="clone">
+                    <label for="repo">Repository</label>
+                    <input id="repo" name="repo" placeholder="https://github.com/user/repo.git" required>
+                    <label for="clone_target">Mapnaam</label>
+                    <input id="clone_target" name="target" placeholder="optioneel, anders repo-naam">
+                    <button id="clone-btn" type="submit">CLONE</button>
+                </form>
+
+                <p class="modal-note">
+                    <a href="#" onclick="closeModal('clone-modal'); openModal('ssl-modal'); return false;">Klik hier om je SSL key toe te voegen.</a>
+                </p>
+            </div>
+        </div>
+<?php } ?>
+
         <div id="vhost-modal" class="modal" style="display: none;">
             <div class="modal-content">
-                <span class="modal-close" onclick="closeVhostModal()">&times;</span>
+                <span class="modal-close" onclick="closeModal('vhost-modal')">&times;</span>
                 <h2>Vhost beheren</h2>
-                <p id="vhost-project-name"></p>
 
                 <form id="vhost-form" action="" method="post" class="modal-form">
-                    <input type="hidden" name="action" id="vhost-action" value="save_vhost">
-                    <input type="hidden" name="project_folder" id="vhost-project-folder" value="">
+                    <input type="hidden" name="action" value="save_vhost">
+                    <label for="vhost-project-folder">Projectmap</label>
+                    <select name="project_folder" id="vhost-project-folder" onchange="syncVhostHostname(this)" required>
+                        <option value="">Kies een projectmap</option>
+<?php foreach ($items as $folder) { ?>
+                        <option value="<?= htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') ?>" data-hostname="<?= htmlspecialchars($projectVhosts[$folder]['hostname'] ?? '', ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($folder, ENT_QUOTES, 'UTF-8') ?></option>
+<?php } ?>
+                    </select>
                     <label for="vhost-hostname">Hostname</label>
                     <input type="text" name="hostname" id="vhost-hostname" placeholder="project.local" required>
                     <button type="submit">OPSLAAN</button>
-                    <button type="submit" id="vhost-delete-btn" class="button-secondary" formnovalidate onclick="return submitDeleteVhost();">VERWIJDEREN</button>
                 </form>
+
+                <p class="modal-note">Vergeet ook je lokale hosts file niet aan te passen zodat de hostname naar `127.0.0.1` wijst.</p>
+
+                <h3>Bestaande vhosts</h3>
+<?php if (!empty($projectVhosts)) { ?>
+                <ul class="vhost-files">
+<?php foreach ($projectVhosts as $project => $vhost) { ?>
+                    <li>
+                        <span><strong><?= htmlspecialchars($project, ENT_QUOTES, 'UTF-8') ?></strong> - <?= htmlspecialchars($vhost['hostname'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <form action="" method="post">
+                            <input type="hidden" name="action" value="delete_vhost">
+                            <input type="hidden" name="project_folder" value="<?= htmlspecialchars($project, ENT_QUOTES, 'UTF-8') ?>">
+                            <button type="submit" class="button-link" onclick="return confirm('Deze vhost verwijderen?')">Verwijderen</button>
+                        </form>
+                    </li>
+<?php } ?>
+                </ul>
+<?php } else { ?>
+                <p><em>Nog geen vhosts.</em></p>
+<?php } ?>
             </div>
         </div>
 

@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+CURRENT_DIR=$(pwd -P)
+WORKDIR="/var/www/html"
+
+case "$CURRENT_DIR" in
+    "$REPO_ROOT"/projects)
+        WORKDIR="/var/www/html/projects"
+        ;;
+    "$REPO_ROOT"/projects/*)
+        RELATIVE_PATH=${CURRENT_DIR#"$REPO_ROOT"/}
+        WORKDIR="/var/www/html/$RELATIVE_PATH"
+        ;;
+    "$REPO_ROOT"/www)
+        WORKDIR="/var/www/html"
+        ;;
+    "$REPO_ROOT"/www/*)
+        RELATIVE_PATH=${CURRENT_DIR#"$REPO_ROOT"/www/}
+        WORKDIR="/var/www/html/$RELATIVE_PATH"
+        ;;
+esac
+
+exec docker compose exec -T -w "$WORKDIR" webserver php "$@"

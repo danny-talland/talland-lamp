@@ -3,7 +3,33 @@ set -eu
 
 SSL_DIR="/etc/apache2/ssl"
 VHOSTS_DIR="/etc/apache2/sites-enabled"
+DEFAULT_VHOST_FILE="$VHOSTS_DIR/000-tlamp-dashboard.conf"
 STATE_FILE="/tmp/apache-watch.state"
+
+ensure_default_vhost() {
+    mkdir -p "$VHOSTS_DIR"
+
+    if [ -f "$DEFAULT_VHOST_FILE" ]; then
+        return
+    fi
+
+    cat > "$DEFAULT_VHOST_FILE" <<'CONF'
+# TLAMP_DEFAULT_VHOST
+<VirtualHost *:80>
+    ServerName localhost
+    ServerAlias 127.0.0.1 ::1
+    DocumentRoot /var/www/html
+
+    <Directory /var/www/html>
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/dashboard-error.log
+    CustomLog ${APACHE_LOG_DIR}/dashboard-access.log combined
+</VirtualHost>
+CONF
+}
 
 snapshot_dir_state() {
     dir="$1"
@@ -24,11 +50,13 @@ snapshot_apache_state() {
 }
 
 watch_apache_dirs() {
+    ensure_default_vhost
     last_state="$(snapshot_apache_state)"
     printf '%s' "$last_state" > "$STATE_FILE"
 
     while true; do
         sleep 2
+        ensure_default_vhost
         current_state="$(snapshot_apache_state)"
 
         if [ "$current_state" != "$last_state" ]; then

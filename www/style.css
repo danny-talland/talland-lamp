@@ -62,6 +62,34 @@ input {
     width: 20px;
 }
 
+.project-actions {
+    display: flex;
+    gap: 12px;
+    margin: 10px 0 22px 0;
+}
+
+.action-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border: 1px solid #cfd6e4;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.action-tile img {
+    width: 26px;
+    height: 26px;
+}
+
+.action-tile:hover {
+    text-decoration: none;
+    background: #f5f7fb;
+    border-color: #b8c4da;
+}
+
 table {
     border-collapse: collapse;
     width: 100%;
@@ -139,6 +167,21 @@ ul.ssl-files li {
 }
 ul.ssl-files li code {
     flex: 1;
+}
+
+ul.vhost-files {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0 0;
+}
+
+ul.vhost-files li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #ececec;
 }
 
 /* Modal dialog */
@@ -233,6 +276,15 @@ ul.ssl-files li code {
     border-radius: 3px;
 }
 
+.modal-form input,
+.modal-form select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
 .modal-form button {
     padding: 8px 15px;
     background-color: #4D6AFD;
@@ -257,4 +309,25 @@ ul.ssl-files li code {
 
 .project-hostname {
     white-space: nowrap;
+    text-align: right;
+    width: 1%;
+}
+
+.modal-note {
+    margin: 14px 0 0 0;
+    font-size: 0.95em;
+    color: #444;
+}
+
+.button-link {
+    border: none;
+    background: none;
+    color: #4D6AFD;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+}
+
+.button-link:hover {
+    text-decoration: underline;
 }
