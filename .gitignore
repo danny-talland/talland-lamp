@@ -21,3 +21,4 @@
 # Local projects must never be committed
 /projects/**
 !/projects/.gitkeep
+.DS_Store
