@@ -22,6 +22,10 @@ function convert_mount_source_to_local_path(string $source): string
         return strtoupper($matches[1]) . ':\\' . str_replace('/', '\\', $matches[2]);
     }
 
+    if (preg_match('#^/(?:host_mnt|run/desktop/mnt/host)/([a-zA-Z])/?$#', $source, $matches)) {
+        return strtoupper($matches[1]) . ':\\';
+    }
+
     if (preg_match('#^/(?:host_mnt|run/desktop/mnt/host)/(Users/.+)$#', $source, $matches)) {
         return '/' . $matches[1];
     }
@@ -35,6 +39,19 @@ function convert_mount_source_to_local_path(string $source): string
     }
 
     return $source;
+}
+
+function get_mount_local_path(string $mountRoot, string $mountSource): string
+{
+    $localSource = convert_mount_source_to_local_path($mountSource);
+    $mountRoot = decode_mount_path($mountRoot);
+
+    // Docker Desktop on Windows can expose the drive root as the source and the repo path as the mount root.
+    if (preg_match('/^[A-Z]:\\\\?$/i', $localSource) && str_starts_with($mountRoot, '/')) {
+        return rtrim($localSource, "\\/") . '\\' . str_replace('/', '\\', ltrim($mountRoot, '/'));
+    }
+
+    return $localSource;
 }
 
 function get_projects_local_path(): string
@@ -54,12 +71,12 @@ function get_projects_local_path(): string
         $left = preg_split('/\s+/', $segments[0]);
         $right = preg_split('/\s+/', $segments[1]);
 
-        if (!isset($left[4], $right[1])) {
+        if (!isset($left[3], $left[4], $right[1])) {
             continue;
         }
 
         if ($left[4] === rtrim(PROJECTS_DIR, '/')) {
-            return rtrim(convert_mount_source_to_local_path($right[1]), "\\/") . DIRECTORY_SEPARATOR;
+            return rtrim(get_mount_local_path($left[3], $right[1]), "\\/") . DIRECTORY_SEPARATOR;
         }
     }
 
